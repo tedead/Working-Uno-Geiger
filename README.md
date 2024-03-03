@@ -5,7 +5,8 @@ Equipment:
     Arduino Uno
 
     STS-05 (CTC-05)
-        https://www.pocketmagic.net/tube-sts-5-%D1%81tc-5-geiger-tube/
+        <a href='https://www.pocketmagic.net/tube-sts-5-%D1%81tc-5-geiger-tube' 
+         <a href="https://www.pocketmagic.net/tube-sts-5-%D1%81tc-5-geiger-tube">STS-5 (СTC-5) Geiger tube</a> 
 
     0.96 Inch OLED Module 12864 128x64 Yellow Blue SSD1306 Driver I2C Serial Self-Luminous Display Board
 
