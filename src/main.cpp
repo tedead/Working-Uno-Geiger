@@ -8,6 +8,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <toneAC.h>
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -17,17 +18,27 @@
 #define YPOS 1
 #define DELTAY 2
 #define BUZZER_PIN 7
-#define BATTERY_PIN A3
 #define MEASUREMENT_SECS 40
+#define NMEAS 5         // number of countrate measurements for running average
+#define BATTERY_PIN A3    // pin for reading battery voltage
+#define LED_PIN 10        // first LED pin
 
-
+int t_int = 1000;       // integration time in ms
+int counts = 0;         // number of counts per intergation time
+int counts_array[NMEAS] = {0,0,0,0,0};  // array for floating average
+int index = 0;          // index for floating average
+double rate_cpm = 0.;    // count rate in cpm
+double rate_uS_h = 0.;  // count rate in µSv/h
+unsigned long previousMillis_LED = 0; // ms timer for blinking LEDs
+unsigned long previousMillis = 0; // ms timer for countrate calculation
+unsigned long currentMillis = 0; // ms timer for countrate calculation
+int LED = LED_PIN;                // current LED to blink
 volatile unsigned int totalCounts = 0;
 const int GEIGER = 2;
 float microSeiverts = 0.00;
 const int btnReset = 8;
 volatile unsigned int newTicks = 0;
 volatile unsigned long countsPrevious = 0;
-unsigned long previousMillis = 0; 
 unsigned long previousMillis1 = 0; 
 const long interval = 60000;  //40000; 
 const long interval1 = 500; 
@@ -46,12 +57,13 @@ int clickCounter = 0;
 unsigned int ticksLog[MEASUREMENT_SECS];
 unsigned int tickCountsLog[MEASUREMENT_SECS];
 int logsIndex = -1;
-unsigned int ticksCount = 0;
-unsigned int ticksCountPerSec = 0;
+signed int ticksCount = 0;
+signed int ticksCountPerSec = 0;
 unsigned long tickCountsLogSum = 0;
 unsigned long lastTickLogsUpdateTime = 0;
 unsigned long lastVoltageReadTime = 0;
 float voltage = 0;
+bool hasRadioactiveMaterial = false;
 
 //Adafruit_SSD1306 display(OLED_RESET);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
@@ -179,13 +191,142 @@ static const unsigned char PROGMEM bt1[] =
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-#if (SSD1306_LCDHEIGHT != 32)
+/*
+#if (SSD1306_LCDHEIGHT != 64)
 #error("Height incorrect, please fix Adafruit_SSD1306.h!");
 #endif
+*/
+
+void batteryLevel() 
+{
+
+  int analog_value = analogRead(BATTERY_PIN);
+  double voltage = (analog_value * 5.0) / 1024.0; 
+   
+   if (voltage < 0.1) 
+   {
+     voltage=0.0;
+   }
+
+   if(voltage > 3.3) {
+    //display.drawBitmap(0, 20, bt1, 128, 32, WHITE);
+    if(voltage > 3.4) {
+      display.drawBitmap(0, 15, bt1, 128, 32, WHITE);
+      if(voltage > 3.5) {
+        display.drawBitmap(0, 10, bt1, 128, 32, WHITE);
+        if(voltage > 3.6) {
+          display.drawBitmap(0, 5, bt1, 128, 32, WHITE);
+          if(voltage > 3.8) {
+            display.drawBitmap(0, 0, bt1, 128, 32, WHITE);
+          }
+        }
+      }
+    }
+   }
+}
+
+void triggerGeiger() 
+{
+  hasRadioactiveMaterial = true;
+  delay(1);
+  counts++;
+  digitalWrite(BUZZER_PIN, HIGH);
+  delay(1);
+  digitalWrite(BUZZER_PIN, LOW);
+}
+ 
+// update count rate on display
+//
+void printRate() 
+{
+  char buffer_cpm[16];
+  char buffer_uS[16];
+  dtostrf(rate_cpm, 2, 0, buffer_cpm);
+  dtostrf(rate_uS_h, 3, 1, buffer_uS);
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.setCursor(10, 20);
+  display.println(buffer_cpm);
+  display.setCursor(10, 40);
+  display.println(buffer_uS);
+  display.setTextSize(1);
+  display.setCursor(50, 25);
+  display.println("cpm"); 
+  display.setCursor(50, 45);
+  display.println("uSv/h");
+}
+
+void countRate()
+{
+  currentMillis = millis();
+  unsigned long dt = currentMillis - previousMillis;  // last update of display
+  //unsigned long dt_LED = currentMillis - previousMillis_LED; // last update of LEDs
+
+  // update display after integration time
+  if(dt > t_int) 
+  {
+    display.clearDisplay();
+
+    if(hasRadioactiveMaterial) 
+    {
+       display.drawBitmap(-10, 20, lcd_bmp, 128, 32, WHITE); // draw radioactive symbol
+       hasRadioactiveMaterial = false;
+    }
+
+    display.drawBitmap(0, 20, fl, 128, 32, WHITE); // draw battery symbol
+    
+    // calculate floating average
+    counts_array[index] = counts;
+    int sumCounts = 0;
+
+    for(unsigned int i = 0; i < NMEAS; ++i) 
+    {
+      sumCounts += counts_array[i];
+    }
+
+    index++;
+
+    if(index == NMEAS) 
+    {
+      index = 0;
+    }
+    
+    rate_cpm = (double)(sumCounts) / (double)(NMEAS) / (double)(dt) * 1000. * 60.;
+    //rate_uS_h = rate_cpm * 0.0063;  // conversion according to https://www.pocketmagic.net/tube-sbm-20-%D1%81%D0%B1%D0%BC-20-geiger-tube/
+    rate_uS_h = rate_cpm * 0.0067;  // conversion according to https://www.pocketmagic.net/tube-sts-5-%d1%81tc-5-geiger-tube/
+    counts = 0;
+    previousMillis = currentMillis;
+    //moveServo();
+    printRate();
+    batteryLevel();
+    display.display();
+  }
+}
 
 void ISR_impulse() 
 { // Captures count of events from Geiger counter board
   newTicks++;
+}
+
+void drawBatteryLevel() 
+{
+  display.drawBitmap(0, 0, fl, 128, 32, WHITE);
+  
+  if (voltage > 3.3) {
+    display.drawBitmap(0, 0, bt1, 128, 32, WHITE);
+    if (voltage > 3.4) {
+      display.drawBitmap(0, -5, bt1, 128, 32, WHITE);
+      if (voltage > 3.5) {
+        display.drawBitmap(0, -10, bt1, 128, 32, WHITE);
+         if (voltage > 3.6) {
+          display.drawBitmap(0, -15, bt1, 128, 32, WHITE);
+          if (voltage > 3.8) {
+            display.drawBitmap(0, -20, bt1, 128, 32, WHITE);
+          }
+        }
+      }
+    }
+  }
 }
 
 void drawRadiationImage(boolean hasNewTicks) 
@@ -228,6 +369,7 @@ void drawMeasuredValues()
   display.setTextColor(WHITE);
   display.setTextSize(2);
   display.setCursor(10, 20);
+  Serial.println("Ticks: " + String(ticksCount));
   display.print(ticksCount);
   display.setTextSize(1);
   display.println(" uR/h");
@@ -276,7 +418,7 @@ void updateDisplay(boolean hasNewTicks)
   display.clearDisplay(); 
   
   drawMeasuredValues();  
-  //drawBatteryLevel();
+  drawBatteryLevel();
   drawRadiationImage(hasNewTicks);
 
   display.display();
@@ -287,14 +429,28 @@ void activateBuzzer(boolean hasNewTicks)
   if (hasNewTicks) 
   {
       totalCounts++;
-      digitalWrite(BUZZER_PIN, HIGH); // buzzer ON
-      delay(5);
+
+
+        //digitalWrite(BUZZER_PIN, HIGH); // buzzer ON
+        //delay(1);
+        //digitalWrite(BUZZER_PIN, LOW); // buzzer OFF
+        //delay(100);
+        Serial.println("Buzzer ON");
+        toneAC(1, 10);
+        delay(100);
+        toneAC();
+
+      //digitalWrite(BUZZER_PIN, HIGH); // buzzer ON
+      //delay(5);
+
+
       //tone(BUZZER_PIN, 4);
       //analogWrite(BUZZER_PWM, 255);
   } 
   else 
   {
-      digitalWrite(BUZZER_PIN, LOW); // buzzer OFF
+    toneAC();
+      //digitalWrite(BUZZER_PIN, LOW); // buzzer OFF
       //noTone(BUZZER_PIN);
       //analogWrite(BUZZER_PWM, 0);
   }
@@ -305,35 +461,41 @@ void updateTicks(unsigned int newValue)
   ticksCountPerSec += newValue;
   ticksCount += newValue;
 
-#if DEBUG
-  if(newValue > 0) {
-    Serial.print(millis());
-    Serial.print(" ");
-    Serial.print(newValue);
-    Serial.print(" ");
-    Serial.println(ticksCount);
-  }
-#endif
+  #if DEBUG
+    if(newValue > 0) {
+      Serial.print(millis());
+      Serial.print(" ");
+      Serial.print(newValue);
+      Serial.print(" ");
+      Serial.println(ticksCount);
+    }
+  #endif
 }
 
-void updateTickLogs() {
-  if(!isTimeOut(lastTickLogsUpdateTime, 1000)) {
+void updateTickLogs() 
+{
+  if(!isTimeOut(lastTickLogsUpdateTime, 1000)) 
+  {
     return;
   }
       
-  if(logsIndex < (MEASUREMENT_SECS - 1)) {
+  if(logsIndex < (MEASUREMENT_SECS - 1)) 
+  {
     logsIndex++;
-  } else {
+  } else 
+  {
     ticksCount -= ticksLog[0];
     tickCountsLogSum -= tickCountsLog[0];
     
-    for(byte i = 1; i <= logsIndex; i++) {
+    for(byte i = 1; i <= logsIndex; i++) 
+    {
       ticksLog[i - 1] = ticksLog[i];
       tickCountsLog[i - 1] = tickCountsLog[i];
     }
   }
 
   ticksLog[logsIndex] = ticksCountPerSec;
+  
   ticksCountPerSec = 0;
   
   tickCountsLog[logsIndex] = ticksCount;
@@ -355,19 +517,27 @@ void setup()
 
   pinMode(btnReset, INPUT_PULLUP);
 
-  pinMode(GEIGER, INPUT);
+  //pinMode(GEIGER, INPUT);
+
+  //PKE code test - Mar 3rd 2024 - Before
+  pinMode(GEIGER, INPUT_PULLUP);
 
   digitalWrite(GEIGER, HIGH);
 
   // Mar 3rd 2024 - Before
   //attachInterrupt(digitalPinToInterrupt(GEIGER), ISR_impulse, FALLING); 
 
+  //PKE code test - Mar 3rd 2024 - Before
+  attachInterrupt(digitalPinToInterrupt(GEIGER), triggerGeiger, LOW);
+
   // Mar 3rd 2024 - After
-  attachInterrupt(digitalPinToInterrupt(GEIGER), ISR_impulse, LOW); 
+  //attachInterrupt(digitalPinToInterrupt(GEIGER), ISR_impulse, LOW); 
 }
 
 void loop() 
 {
+  countRate();
+  /*
   //Check reset button state. If HIGH (pressed) then reset counts & display
   if(digitalRead(btnReset) == LOW)
   {
@@ -387,21 +557,12 @@ void loop()
     newTicks = 0;
     
     updateTicks(_newTicks);
-    
     updateTickLogs();
     //readVoltage();
-
     boolean hasNewTicks = (_newTicks > 0);
       
     updateDisplay(hasNewTicks);
     activateBuzzer(hasNewTicks);
-    /*
-    Serial.println("Counts: " + String(counts));
-    Serial.println("Counts Previous: " + String(countsPrevious));
-    Serial.println("Count difference: " + String(counts - countsPrevious));
-    countsPrevious = counts;
-    //Serial.flush();
-    delay(250);
-    */
   }
+  */
 }
