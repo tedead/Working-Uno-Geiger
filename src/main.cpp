@@ -3,6 +3,9 @@
 //https://www.google.com/search?client=firefox-b-1-d&q=arduino+geiger+counter+schematic#vhid=bbxGlvdLzpYT9M&vssid=l
 //https://www.instructables.com/PKE-Meter-Geiger-Counter/
 
+//8/4/2025 Links:
+//https://www.imagesco.com/geiger/geiger-counter-tubes.html -- Geiger Counter Tubes Online Store
+
 #include <Arduino.h>
 #include <SPI.h>
 #include <Wire.h>
