@@ -272,7 +272,8 @@ void countRate()
 
     if(hasRadioactiveMaterial) 
     {
-       display.drawBitmap(-10, 20, lcd_bmp, 128, 32, WHITE); // draw radioactive symbol
+       display.drawBitmap(-10, 10, lcd_bmp, 128, 32, WHITE); // draw radioactive symbol
+       //display.drawBitmap(-10, 20, lcd_bmp, 128, 32, WHITE); // draw radioactive symbol --Original
        hasRadioactiveMaterial = false;
     }
 
@@ -335,7 +336,8 @@ void drawBatteryLevel()
 void drawRadiationImage(boolean hasNewTicks) 
 {
   if (hasNewTicks) {
-      display.drawBitmap(-10, 20, lcd_bmp, 128, 32, WHITE);
+      display.drawBitmap(-10, 10, lcd_bmp, 128, 32, WHITE);
+      //display.drawBitmap(-10, 10, lcd_bmp, 128, 32, WHITE); --Original
   }
 }
 
