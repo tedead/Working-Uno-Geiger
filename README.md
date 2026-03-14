@@ -20,3 +20,5 @@ Equipment:
     Passive piezo buzzer
 
     Momentary push button
+
+![alt text](https://github.com/tedead/Working-Uno-Geiger/blob/main/big.jpg?raw=true)
